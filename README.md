@@ -44,6 +44,3 @@
 ## 📈 My Hacktime Progress
 
 You can see my live stats here:
-
-```md
-{{ wakatimeDoubleCategoryBar "🧠 Languages:" wakatimeData.Languages "📦 Projects:" wakatimeData.Projects 5 }}
