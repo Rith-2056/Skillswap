@@ -43,8 +43,6 @@
 
 ## 📈 My Hacktime Progress
 
-> Using [Hack Club Hacktime](https://hackclub.com/hacktime) to track my hours building this app.
-
 You can see my live stats here:
 
 ```md
