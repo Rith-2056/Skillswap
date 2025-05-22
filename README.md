@@ -1,12 +1,48 @@
-# React + Vite
+# 🛠️ SkillSwap
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**SkillSwap** is a peer-to-peer micro-help platform that lets people **request and offer short bursts of help** — anything from explaining a math concept to fixing a bug. Built for students, neighbors, and local communities, SkillSwap aims to make **asking for help feel easy** and **offering help feel meaningful**.
 
-Currently, two official plugins are available:
+> _“Everyone has something to teach. Everyone has something to learn.”_
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+---
 
-## Expanding the ESLint configuration
+## 🌟 Features
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- 📌 **Post a request** — "Need help debugging my Python script"
+- 🧠 **Offer your skills** — "Can help with essay edits or college apps"
+- 🔄 **Swap-based system** — Earn trust or karma points as you help others
+- 📬 **Built-in messaging** — Simple, direct, no clutter
+- 📍 **Optional location filter** — Great for campus or city-based usage
+
+---
+
+## 🚧 Roadmap
+
+- [ ] User authentication (via GitHub/Google)
+- [ ] Request/offer matching algorithm
+- [ ] Real-time messaging
+- [ ] Skill rating system
+- [ ] Mobile-friendly UI
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer         | Technology                |
+|--------------|---------------------------|
+| Frontend     | React / Next.js           |
+| Styling      | TailwindCSS               |
+| Backend      | Node.js + Express / Next API Routes |
+| Database     | MongoDB / Firebase        |
+| Auth         | Clerk.dev / Firebase Auth |
+| Deployment   | Vercel / Railway / Fly.io |
+
+> *(Choices may evolve — WIP project)*
+
+---
+
+## 📈 My Hacktime Progress
+
+You can see my live stats here:
+
+![Hacktime Stats](https://github-readme-stats.hackclub.dev/api/wakatime?username=Divyarith56&api_domain=hackatime.hackclub.com&theme=dark)
