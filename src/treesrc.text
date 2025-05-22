@@ -1,0 +1,26 @@
+src
+├── App.css
+├── App.jsx
+├── assets
+│   └── react.svg
+├── components
+│   ├── Feed.jsx
+│   ├── HelpersList.jsx
+│   ├── Leaderboard.jsx
+│   ├── Profile.jsx
+│   └── myContributions.jsx
+├── index.css
+├── layouts
+│   └── MainLayout.jsx
+├── lib
+│   └── firebase.js
+├── main.jsx
+└── pages
+    ├── HomePage.jsx
+    ├── LeaderboardPage.jsx
+    ├── LoginPage.jsx
+    ├── MyContributionsPage.jsx
+    ├── NotFoundPage.jsx
+    └── ProfilePage.jsx
+
+6 directories, 18 files
