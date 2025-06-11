@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs, updateDoc, doc, getDoc, deleteDoc, addDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, auth } from "../lib/firebase";
+import { getOrCreateChat } from "../utils/chatService";
+import { useNavigate } from "react-router-dom";
+import { MessageCircle } from "lucide-react";
 
 function HelpersList({ requestId, requestTitle }) {
   const [helpers, setHelpers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchHelpers = async () => {
@@ -145,6 +149,31 @@ function HelpersList({ requestId, requestTitle }) {
     }
   };
 
+  const handleStartChat = async (helperId) => {
+    try {
+      // Get the current user directly from the imported auth object
+      const currentUser = auth.currentUser;
+      
+      if (!currentUser) {
+        alert("You must be signed in to start a chat.");
+        return;
+      }
+      
+      console.log("Starting chat between", currentUser.uid, "and", helperId, "for request", requestId);
+      
+      // Create or get chat
+      const chatId = await getOrCreateChat(requestId, currentUser.uid, helperId);
+      
+      console.log("Chat created/retrieved with ID:", chatId);
+      
+      // Navigate to the chat page
+      navigate(`/chats?chatId=${chatId}`);
+    } catch (error) {
+      console.error("Error starting chat:", error);
+      alert("Failed to start chat. Please try again.");
+    }
+  };
+
   if (loading) {
     return (
       <div className="animate-pulse space-y-2">
@@ -209,12 +238,21 @@ function HelpersList({ requestId, requestTitle }) {
               )}
               
               {helper.status === 'accepted' && (
-                <button
-                  onClick={() => awardKarma(helper.helperId)}
-                  className="px-4 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-primary-500 to-secondary-500 text-white hover:from-primary-600 hover:to-secondary-600 shadow-sm shadow-primary-500/20 hover:shadow-md hover:shadow-primary-500/30 transition-all duration-200"
-                >
-                  Award Karma
-                </button>
+                <>
+                  <button
+                    onClick={() => handleStartChat(helper.helperId)}
+                    className="px-4 py-2 text-sm font-medium rounded-lg bg-primary-100 text-primary-700 hover:bg-primary-200 transition-all duration-200 flex items-center gap-1.5"
+                  >
+                    <MessageCircle size={16} />
+                    Chat
+                  </button>
+                  <button
+                    onClick={() => awardKarma(helper.helperId)}
+                    className="px-4 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-primary-500 to-secondary-500 text-white hover:from-primary-600 hover:to-secondary-600 shadow-sm shadow-primary-500/20 hover:shadow-md hover:shadow-primary-500/30 transition-all duration-200"
+                  >
+                    Award Karma
+                  </button>
+                </>
               )}
               
               {helper.status === 'completed' && (

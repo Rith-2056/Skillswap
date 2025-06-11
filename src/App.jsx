@@ -16,6 +16,7 @@ import MyContributionsPage from "./pages/MyContributionsPage";
 import ProfilePage from "./pages/ProfilePage";
 import LoginPage from "./pages/LoginPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import ChatsPage from "./pages/ChatsPage";
 
 // AnimatePresence wrapper for route transitions
 const AnimatedRoutes = ({ user, karma, loading }) => {
@@ -51,6 +52,7 @@ const AnimatedRoutes = ({ user, karma, loading }) => {
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/my-contributions" element={<MyContributionsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/chats" element={<ChatsPage />} />
         </Route>
         
         {/* 404 route */}

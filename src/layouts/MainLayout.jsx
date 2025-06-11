@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
-import { UserCircle, LogOut, ChevronDown, Sparkles, Menu, X } from 'lucide-react';
+import { UserCircle, LogOut, ChevronDown, Sparkles, Menu, X, MessageCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { auth } from "../lib/firebase";
 import { signOut } from "firebase/auth";
@@ -81,6 +81,9 @@ const MainLayout = ({ user, karma }) => {
               </NavLink>
               <NavLink to="/my-contributions" current={location.pathname === '/my-contributions'}>
                 ⭐️ My Contributions
+              </NavLink>
+              <NavLink to="/chats" current={location.pathname === '/chats'}>
+                💬 Messages
               </NavLink>
             </nav>
             
@@ -198,6 +201,9 @@ const MainLayout = ({ user, karma }) => {
               </MobileNavLink>
               <MobileNavLink to="/my-contributions" current={location.pathname === '/my-contributions'} onClick={() => setIsMobileMenuOpen(false)}>
                 ⭐️ My Contributions
+              </MobileNavLink>
+              <MobileNavLink to="/chats" current={location.pathname === '/chats'} onClick={() => setIsMobileMenuOpen(false)}>
+                💬 Messages
               </MobileNavLink>
               
               {user && (
