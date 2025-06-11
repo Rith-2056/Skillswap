@@ -2,8 +2,9 @@
 import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "./lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { createOrUpdateUser } from "./lib/userFunctions";
+import { AnimatePresence } from "framer-motion";
 
 // Layouts
 import MainLayout from "./layouts/MainLayout";
@@ -16,51 +17,25 @@ import ProfilePage from "./pages/ProfilePage";
 import LoginPage from "./pages/LoginPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
-function App() {
-  const [user, setUser] = useState(null);
-  const [karma, setKarma] = useState(0);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setUser(user);
-        const userRef = doc(db, "users", user.uid);
-        const docSnap = await getDoc(userRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setKarma(data.karma ?? 0);
-        }
-      } else {
-        setUser(null);
-        setKarma(0);
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // Protected route wrapper that redirects to login if not authenticated
-  const ProtectedRoute = ({ children }) => {
-    if (loading) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-indigo-50">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-indigo-600"></div>
+// AnimatePresence wrapper for route transitions
+const AnimatedRoutes = ({ user, karma, loading }) => {
+  const location = useLocation();
+  
+  // Loading screen while checking authentication
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-secondary-50">
+        <div className="flex flex-col items-center">
+          <div className="w-16 h-16 border-t-4 border-b-4 border-primary-600 rounded-full animate-spin mb-4"></div>
+          <p className="text-xl font-medium text-primary-700">Loading...</p>
         </div>
-      );
-    }
-    
-    if (!user) {
-      return <Navigate to="/login" replace />;
-    }
-
-    return children;
-  };
-
+      </div>
+    );
+  }
+  
   return (
-    <BrowserRouter>
-      <Routes>
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
         {/* Public route */}
         <Route path="/login" element={
           user ? <Navigate to="/" replace /> : <LoginPage />
@@ -68,7 +43,7 @@ function App() {
         
         {/* Protected routes with MainLayout */}
         <Route element={
-          <ProtectedRoute>
+          <ProtectedRoute user={user}>
             <MainLayout user={user} karma={karma} />
           </ProtectedRoute>
         }>
@@ -81,6 +56,48 @@ function App() {
         {/* 404 route */}
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+    </AnimatePresence>
+  );
+};
+
+// Protected route wrapper that redirects to login if not authenticated
+const ProtectedRoute = ({ user, children }) => {
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+};
+
+function App() {
+  const [user, setUser] = useState(null);
+  const [karma, setKarma] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setUser(user);
+        try {
+          // Use the createOrUpdateUser function to ensure all required fields exist
+          const userData = await createOrUpdateUser(user);
+          setKarma(userData.karma ?? 0);
+        } catch (error) {
+          console.error("Error setting up user:", error);
+          setKarma(0);
+        }
+      } else {
+        setUser(null);
+        setKarma(0);
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  return (
+    <BrowserRouter>
+      <AnimatedRoutes user={user} karma={karma} loading={loading} />
     </BrowserRouter>
   );
 }

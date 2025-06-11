@@ -3,95 +3,91 @@ import {collection,onSnapshot,query,orderBy,doc,setDoc, where} from "firebase/fi
 import { db, auth } from "../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import HelpersList from "./HelpersList"; 
+import OfferHelpModal from './OfferHelpModal';
+import { fetchUserById } from "../utils/userHelpers";
 
-function Feed() {
+function Feed({ currentUser, filter }) {
   const [requests, setRequests] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState({
-    status: 'all',
-    tag: null,
-    sortBy: 'newest'
-  });
+  const [selectedRequest, setSelectedRequest] = useState(null);
 
   useEffect(() => {
-    let q = query(collection(db, "requests"));
-    
-    // Apply status filter
-    if (filter.status !== 'all') {
-      q = query(q, where("status", "==", filter.status));
-    }
-    
-    // Apply sorting
-    switch (filter.sortBy) {
-      case 'oldest':
-        q = query(q, orderBy("createdAt", "asc"));
-        break;
-      case 'urgent':
-        q = query(q, orderBy("urgency", "desc"), orderBy("createdAt", "desc"));
-        break;
-      default: // newest
-        q = query(q, orderBy("createdAt", "desc"));
-    }
+    const fetchRequests = async () => {
+      setLoading(true);
+      try {
+        let q = query(
+          collection(db, "requests"),
+          orderBy("createdAt", "desc")
+        );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const posts = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      
-      // Apply client-side tag filtering
-      const filteredPosts = filter.tag 
-        ? posts.filter(post => post.tags?.includes(filter.tag))
-        : posts;
-        
-      setRequests(filteredPosts);
-      setLoading(false);
-    });
+        // Apply status filter
+        if (filter.status) {
+          q = query(
+            collection(db, "requests"),
+            where("status", "==", filter.status),
+            orderBy("createdAt", "desc")
+          );
+        }
 
-    // Track logged-in user
-    const authUnsub = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-    });
+        // For real-time updates
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          let fetchedRequests = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
 
-    return () => {
-      unsubscribe();
-      authUnsub();
+          // Apply tag filter if specified
+          if (filter.tag) {
+            fetchedRequests = fetchedRequests.filter(req => 
+              req.tags && req.tags.includes(filter.tag)
+            );
+          }
+
+          // Apply search filter if specified
+          if (filter.search) {
+            const searchLower = filter.search.toLowerCase();
+            fetchedRequests = fetchedRequests.filter(req => 
+              req.title.toLowerCase().includes(searchLower) || 
+              req.description.toLowerCase().includes(searchLower)
+            );
+          }
+
+          // Sort urgent requests to the top within their status category
+          fetchedRequests.sort((a, b) => {
+            if (a.urgent && !b.urgent) return -1;
+            if (!a.urgent && b.urgent) return 1;
+            return 0;
+          });
+
+          setRequests(fetchedRequests);
+          setLoading(false);
+        });
+
+        return () => unsubscribe();
+      } catch (error) {
+        console.error("Error fetching requests:", error);
+        setLoading(false);
+      }
     };
+
+    fetchRequests();
   }, [filter]);
 
-  const handleHelp = async (requestId) => {
-    if (!currentUser) return alert("You must be signed in.");
-
-    try {
-      const responseRef = doc(
-        db,
-        "requests",
-        requestId,
-        "responses",
-        currentUser.uid
-      );
-
-      await setDoc(responseRef, {
-        helperId: currentUser.uid,
-        timestamp: new Date(),
-        status: "offered",
-      });
-
-      alert("Thanks! Your offer to help has been recorded.");
-    } catch (err) {
-      console.error("Error sending help offer:", err);
-      alert("Something went wrong. Try again.");
+  const handleHelp = (request) => {
+    if (!currentUser) {
+      alert("You must be signed in.");
+      return;
     }
+    setSelectedRequest(request);
   };
 
   if(loading) {
     return (
       <div className="space-y-4">
         {[1,2,3].map((n) => (
-          <div key={n} className="border border-gray-200 rounded p-4 bg-white shadow-sm animate-pulse">
-            <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-            <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+          <div key={n} className="border border-neutral-200 rounded-xl p-4 bg-white shadow-sm animate-pulse">
+            <div className="h-4 bg-neutral-200 rounded w-3/4 mb-2"></div>
+            <div className="h-4 bg-neutral-200 rounded w-1/2"></div>
           </div>
         ))}
       </div>
@@ -101,11 +97,11 @@ function Feed() {
   if (requests.length === 0) {
     return (
       <div className="text-center py-8">
-        <p className="text-gray-500">No requests found.</p>
+        <p className="text-neutral-500">No requests found.</p>
         {filter.tag && (
           <button
             onClick={() => setFilter(prev => ({ ...prev, tag: null}))}
-            className="mt-2 text-indigo-600 hover:text-indigo-700"
+            className="mt-2 text-primary-600 hover:text-primary-700"
           >
             Clear tag filter
           </button>
@@ -115,100 +111,95 @@ function Feed() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 mb-4">
-        <select
-          value={filter.status}
-          onChange={(e) => setFilter(prev => ({...prev, status: e.target.value}))}
-          className="px-3 py-1 text-sm rounded-full border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-        >
-          <option value="all">All Requests</option>
-          <option value="open">Open</option>
-          <option value="in_progress">In Progress</option>
-          <option value="completed">Completed</option>
-        </select>
-
-        <select
-          value={filter.sortBy}
-          onChange={(e) => setFilter(prev => ({...prev, sortBy: e.target.value}))}
-          className="px-3 py-1 text-sm rounded-full border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-        >
-          <option value="newest">Newest First</option>
-          <option value="oldest">Oldest First</option>
-          <option value="urgent">Most Urgent</option>
-        </select>
-      </div>
-
+    <div className="space-y-6">
       {requests.map((req) => (
         <div
           key={req.id}
-          className="border border-gray-200 rounded-lg p-6 bg-white shadow-sm hover:shadow-md transition"
+          className={`border rounded-xl p-6 bg-white shadow-sm hover:shadow-md transition-all duration-300 ${
+            req.urgent ? "border-l-4 border-l-amber-500" : "border-neutral-200"
+          }`}
         >
-          <div className="flex items-start justify-between">
+          <div className="flex justify-between items-start">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">{req.title}</h3>
-              <p className="text-sm text-gray-500 mt-1">
+              <h3 className="text-xl font-semibold text-neutral-900">
+                {req.title}
+                {req.urgent && (
+                  <span className="ml-2 px-2 py-1 bg-amber-100 text-amber-800 text-xs font-medium rounded-full">
+                    Urgent
+                  </span>
+                )}
+              </h3>
+              <p className="text-neutral-500 text-sm mt-1">
                 Posted by {req.userName} • {new Date(req.createdAt.toDate()).toLocaleDateString()}
               </p>
             </div>
-            <div className="flex items-center space-x-2">
-              <span className={`px-2 py-1 text-xs rounded-full ${
-                req.urgency === 'high' ? 'bg-red-100 text-red-800' :
-                req.urgency === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                'bg-green-100 text-green-800'
-              }`}>
-                {req.urgency.charAt(0).toUpperCase() + req.urgency.slice(1)} Priority
-              </span>
-              <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">
-                {req.estimatedTime}
-              </span>
-            </div>
+            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+              req.status === 'open' ? 'bg-green-100 text-green-800' :
+              req.status === 'in_progress' ? 'bg-primary-100 text-primary-800' :
+              'bg-neutral-100 text-neutral-800'
+            }`}>
+              {req.status === 'open' ? 'Open' :
+               req.status === 'in_progress' ? 'In Progress' :
+               'Completed'}
+            </span>
           </div>
 
-          <p className="mt-3 text-gray-600">{req.description}</p>
+          <p className="mt-3 text-neutral-700">{req.description}</p>
 
-          <div className="mt-4">
-            <h4 className="text-sm font-medium text-gray-700">Can offer in return:</h4>
-            <p className="mt-1 text-gray-600">{req.offerInReturn}</p>
-          </div>
-
-          {req.tags?.length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {req.tags.map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => setFilter(prev => ({...prev, tag}))}
-                  className="px-2 py-1 text-xs rounded-full bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition"
-                >
-                  {tag}
-                </button>
-              ))}
+          {req.tags && req.tags.length > 0 && (
+            <div className="mt-4">
+              <div className="flex flex-wrap gap-2">
+                {req.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-3 py-1 bg-primary-100 text-primary-800 rounded-full text-xs font-medium"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
 
           <div className="mt-4 flex justify-between items-center">
             <button
-              onClick={() => handleHelp(req.id)}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+              onClick={() => handleHelp(req)}
+              className="px-5 py-2.5 bg-gradient-to-r from-primary-500 to-secondary-500 text-white font-medium rounded-lg hover:from-primary-600 hover:to-secondary-600 shadow-sm shadow-primary-500/20 hover:shadow-md hover:shadow-primary-500/30 transition-all duration-300 flex items-center gap-1.5"
             >
-              I can help
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+              </svg>
+              Help!
             </button>
 
             {currentUser?.uid === req.userId && (
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-neutral-500">
                 <span className="font-medium">{req.helpers?.length || 0}</span> offers received
               </div>
             )}
           </div>
 
           {currentUser?.uid === req.userId && (
-            <div className="mt-4 border-t pt-4">
-              <p className="text-sm font-semibold mb-2">Helpers:</p>
-              <HelpersList requestId={req.id} />
+            <div className="mt-4 border-t border-neutral-200 pt-4">
+              <p className="text-sm font-semibold mb-2 text-neutral-700">Helpers:</p>
+              <HelpersList 
+                requestId={req.id} 
+                requestTitle={req.title}
+              />
             </div>
           )}
         </div>
       ))}
+
+      {selectedRequest && (
+        <OfferHelpModal
+          isOpen={!!selectedRequest}
+          onClose={() => setSelectedRequest(null)}
+          requestId={selectedRequest.id}
+          requestTitle={selectedRequest.title}
+          currentUser={currentUser}
+        />
+      )}
     </div>
   );
 }

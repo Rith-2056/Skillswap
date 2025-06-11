@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // User profiles
+    match /users/{userId} {
+      allow read;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Skill requests
+    match /requests/{requestId} {
+      allow read;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || request.resource.data.acceptedHelperId == request.auth.uid);
+      
+      // Responses to requests (help offers)
+      match /responses/{responseId} {
+        allow read;
+        allow create: if request.auth != null;
+        allow update, delete: if request.auth != null && 
+          (get(/databases/$(database)/documents/requests/$(requestId)).data.userId == request.auth.uid ||
+           resource.data.helperId == request.auth.uid);
+      }
+    }
+    
+    // Chat messages
+    match /chats/{chatId} {
+      allow read: if request.auth != null && 
+        (request.auth.uid in resource.data.participants);
+      allow create: if request.auth != null && 
+        request.auth.uid in request.resource.data.participants && 
+        request.resource.data.senderId == request.auth.uid;
+      allow update: if request.auth != null && 
+        request.auth.uid in resource.data.participants;
+    }
+    
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null && resource.data.recipientId == request.auth.uid;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && resource.data.recipientId == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.recipientId == request.auth.uid;
+    }
+  }
+} 
