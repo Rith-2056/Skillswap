@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "./lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 // Layouts
@@ -22,23 +22,49 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    let unsubscribeAuth;
+    let unsubscribeUserDoc;
+
+    unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
         setUser(user);
         const userRef = doc(db, "users", user.uid);
-        const docSnap = await getDoc(userRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setKarma(data.karma ?? 0);
+        // Unsubscribe from previous user doc listener if it exists
+        if (unsubscribeUserDoc) {
+          unsubscribeUserDoc();
         }
+        unsubscribeUserDoc = onSnapshot(userRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setKarma(data.karma ?? 0);
+          } else {
+            // This case might happen if the user document is deleted
+            // or not yet created after authentication.
+            setKarma(0);
+          }
+          setLoading(false); // Set loading to false after user data (or lack thereof) is fetched
+        }, (error) => {
+          console.error("Error fetching user document:", error);
+          setLoading(false); // Also set loading to false in case of an error
+        });
       } else {
         setUser(null);
         setKarma(0);
+        // If there's an active user doc listener, unsubscribe from it
+        if (unsubscribeUserDoc) {
+          unsubscribeUserDoc();
+        }
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      // Ensure to unsubscribe from user doc listener on cleanup
+      if (unsubscribeUserDoc) {
+        unsubscribeUserDoc();
+      }
+    };
   }, []);
 
   // Protected route wrapper that redirects to login if not authenticated

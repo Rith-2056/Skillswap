@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {collection,onSnapshot,query,orderBy,doc,setDoc, where} from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -8,6 +8,7 @@ function Feed() {
   const [requests, setRequests] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [helpOfferStatus, setHelpOfferStatus] = useState({}); // Changed to object to store per-request status
   const [filter, setFilter] = useState({
     status: 'all',
     tag: null,
@@ -47,6 +48,10 @@ function Feed() {
         
       setRequests(filteredPosts);
       setLoading(false);
+    }, (error) => {
+      console.error("Error fetching requests:", error);
+      // Optionally, set an error state here to display a message in the UI
+      setLoading(false); // Ensure loading is stopped on error
     });
 
     // Track logged-in user
@@ -60,8 +65,15 @@ function Feed() {
     };
   }, [filter]);
 
-  const handleHelp = async (requestId) => {
-    if (!currentUser) return alert("You must be signed in.");
+  const handleHelp = useCallback(async (requestId) => {
+    if (!currentUser) {
+      setHelpOfferStatus(prev => ({ ...prev, [requestId]: { type: 'error', message: 'You must be signed in.' } }));
+      setTimeout(() => setHelpOfferStatus(prev => ({ ...prev, [requestId]: null })), 3000);
+      return;
+    }
+
+    // Clear previous status for this specific request
+    setHelpOfferStatus(prev => ({ ...prev, [requestId]: null }));
 
     try {
       const responseRef = doc(
@@ -78,12 +90,14 @@ function Feed() {
         status: "offered",
       });
 
-      alert("Thanks! Your offer to help has been recorded.");
+      setHelpOfferStatus(prev => ({ ...prev, [requestId]: { type: 'success', message: 'Thanks! Your offer to help has been recorded.' } }));
     } catch (err) {
       console.error("Error sending help offer:", err);
-      alert("Something went wrong. Try again.");
+      setHelpOfferStatus(prev => ({ ...prev, [requestId]: { type: 'error', message: 'Something went wrong. Try again.' } }));
+    } finally {
+      setTimeout(() => setHelpOfferStatus(prev => ({ ...prev, [requestId]: null })), 3000);
     }
-  };
+  }, [currentUser]);
 
   if(loading) {
     return (
@@ -119,7 +133,10 @@ function Feed() {
       <div className="flex flex-wrap gap-2 mb-4">
         <select
           value={filter.status}
-          onChange={(e) => setFilter(prev => ({...prev, status: e.target.value}))}
+          onChange={(e) => {
+            setFilter(prev => ({...prev, status: e.target.value}));
+            setHelpOfferStatus({}); // Clear messages when filter changes
+          }}
           className="px-3 py-1 text-sm rounded-full border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
         >
           <option value="all">All Requests</option>
@@ -130,7 +147,10 @@ function Feed() {
 
         <select
           value={filter.sortBy}
-          onChange={(e) => setFilter(prev => ({...prev, sortBy: e.target.value}))}
+          onChange={(e) => {
+            setFilter(prev => ({...prev, sortBy: e.target.value}));
+            setHelpOfferStatus({}); // Clear messages when filter changes
+          }}
           className="px-3 py-1 text-sm rounded-full border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
         >
           <option value="newest">Newest First</option>
@@ -177,7 +197,10 @@ function Feed() {
               {req.tags.map((tag) => (
                 <button
                   key={tag}
-                  onClick={() => setFilter(prev => ({...prev, tag}))}
+                  onClick={() => {
+                    setFilter(prev => ({...prev, tag}));
+                    setHelpOfferStatus({}); // Clear messages when filter changes
+                  }}
                   className="px-2 py-1 text-xs rounded-full bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition"
                 >
                   {tag}
@@ -186,17 +209,24 @@ function Feed() {
             </div>
           )}
 
-          <div className="mt-4 flex justify-between items-center">
-            <button
-              onClick={() => handleHelp(req.id)}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
-            >
-              I can help
-            </button>
-
-            {currentUser?.uid === req.userId && (
+          <div className="mt-4 flex flex-col">
+            <div className="flex justify-between items-center">
+              <button
+                onClick={() => handleHelp(req.id)}
+                disabled={!!helpOfferStatus[req.id]} // Disable button if there's an active message for this request
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
+              >
+                I can help
+              </button>
+              {currentUser?.uid === req.userId && (
               <div className="text-sm text-gray-500">
                 <span className="font-medium">{req.helpers?.length || 0}</span> offers received
+              </div>
+              )}
+            </div>
+            {helpOfferStatus[req.id] && (
+              <div className={`mt-2 text-sm ${helpOfferStatus[req.id].type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                {helpOfferStatus[req.id].message}
               </div>
             )}
           </div>

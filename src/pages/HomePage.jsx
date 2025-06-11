@@ -8,6 +8,7 @@ import Select from 'react-select';
 function HomePage() {
   const { user } = useOutletContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formMessage, setFormMessage] = useState(null);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -36,10 +37,12 @@ function HomePage() {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    if (formMessage) setFormMessage(null); // Clear message on change
   };
 
   const handleSelectChange = (name, selectedOption) => {
     setFormData(prev => ({ ...prev, [name]: selectedOption.value}));
+    if (formMessage) setFormMessage(null); // Clear message on change
   };
 
   const handleTagsChange = (selectedOptions) => {
@@ -47,11 +50,13 @@ function HomePage() {
       ...prev,
       tags: selectedOptions ? selectedOptions.map(option => option.value) : []
     }));
+    if (formMessage) setFormMessage(null); // Clear message on change
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setFormMessage(null); // Clear previous message
     
     const request = {
       title: formData.title,
@@ -78,11 +83,12 @@ function HomePage() {
         urgency: "medium",
         estimatedTime: "30min"
       });
-      // Show success message
-      alert("SkillSwap request posted!");
+      setFormMessage({ type: 'success', message: 'SkillSwap request posted!' });
+      setTimeout(() => setFormMessage(null), 3000);
     } catch (err) {
       console.error("Error saving request:", err);
-      alert("Failed to post request");
+      setFormMessage({ type: 'error', message: 'Failed to post request. Please try again.' });
+      setTimeout(() => setFormMessage(null), 3000);
     } finally {
       setIsSubmitting(false);
     }
@@ -213,6 +219,11 @@ function HomePage() {
             >
               {isSubmitting ? 'Posting...' : 'Post Request'}
             </button>
+            {formMessage && (
+              <div className={`mt-3 text-sm text-center ${formMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                {formMessage.message}
+              </div>
+            )}
           </form>
           
           <div className="mt-6">
@@ -238,19 +249,8 @@ function HomePage() {
       {/* Main content with feed */}
       <div className="md:col-span-2">
         <div className="bg-white rounded-xl shadow-md p-6">
-          <div className="flex items-center justify-between mb-6">
+          <div className="mb-6">
             <h2 className="text-xl font-bold text-indigo-700">Recent SkillSwap Requests</h2>
-            <div className="flex space-x-2">
-              <button className="px-3 py-1 text-xs rounded-full bg-indigo-100 text-indigo-700 font-medium hover:bg-indigo-200 transition">
-                All
-              </button>
-              <button className="px-3 py-1 text-xs rounded-full text-gray-500 hover:bg-gray-100 transition">
-                Popular
-              </button>
-              <button className="px-3 py-1 text-xs rounded-full text-gray-500 hover:bg-gray-100 transition">
-                New
-              </button>
-            </div>
           </div>
           
           <Feed />
