@@ -39,10 +39,3 @@
 
 > *(Choices may evolve — WIP project)*
 
----
-
-## 📈 My Hacktime Progress
-
-You can see my live stats here:
-
-![Hacktime Stats](https://github-readme-stats.hackclub.dev/api/wakatime?username=Divyarith56&api_domain=hackatime.hackclub.com&theme=dark)
