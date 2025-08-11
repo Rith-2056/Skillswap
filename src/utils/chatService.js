@@ -10,7 +10,8 @@ import {
   orderBy, 
   serverTimestamp, 
   onSnapshot,
-  updateDoc
+  updateDoc,
+  limit
 } from 'firebase/firestore';
 
 /**
@@ -270,54 +271,105 @@ export const markMessagesAsRead = async (chatId, userId) => {
  */
 export const getUserChats = async (userId) => {
   try {
+    if (!userId) {
+      console.error("No userId provided to getUserChats");
+      return [];
+    }
+    
+    console.log(`Getting chats for user: ${userId}`);
     const chatsRef = collection(db, "chats");
+    
+    // First check if the chats collection exists and is accessible
+    try {
+      await getDocs(limit(1)(chatsRef));
+      console.log("Chats collection exists and is accessible");
+    } catch (error) {
+      if (error.code === 'permission-denied') {
+        console.error("Permission denied for chats collection");
+        throw new Error("You don't have permission to access chat data");
+      } else {
+        // For any other error, just continue - collection might exist but be empty
+        console.warn("Warning when checking chats collection:", error);
+      }
+    }
+    
     const q = query(
       chatsRef,
       where("participants", "array-contains", userId),
       orderBy("updatedAt", "desc")
     );
     
-    const querySnapshot = await getDocs(q);
+    let querySnapshot;
+    try {
+      querySnapshot = await getDocs(q);
+      console.log(`Found ${querySnapshot.docs.length} chats for user ${userId}`);
+    } catch (error) {
+      console.error("Error fetching chats:", error);
+      if (error.code === 'permission-denied') {
+        throw new Error("You don't have permission to access chat data");
+      }
+      // For other errors (like invalid queries), return empty array
+      return [];
+    }
+    
+    if (querySnapshot.empty) {
+      console.log(`No chats found for user ${userId}`);
+      return [];
+    }
     
     // Format chat data and add participant info
     const chats = await Promise.all(querySnapshot.docs.map(async (chatDoc) => {
-      const chatData = chatDoc.data();
-      
-      // Get the other participant's info
-      const otherParticipantId = chatData.participants.find(id => id !== userId);
-      let otherParticipant = { id: otherParticipantId, displayName: "Unknown User" };
-      
       try {
-        const userDoc = await getDoc(doc(db, "users", otherParticipantId));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          otherParticipant = {
-            id: otherParticipantId,
-            displayName: userData.displayName || "Unknown User",
-            photoURL: userData.photoURL || null
-          };
+        const chatData = chatDoc.data();
+        
+        // Get the other participant's info
+        const otherParticipantId = chatData.participants.find(id => id !== userId);
+        if (!otherParticipantId) {
+          console.warn(`No other participant found in chat ${chatDoc.id}`);
+          return null; // Skip this chat
         }
+        
+        let otherParticipant = { id: otherParticipantId, displayName: "Unknown User" };
+        
+        try {
+          const userDoc = await getDoc(doc(db, "users", otherParticipantId));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            otherParticipant = {
+              id: otherParticipantId,
+              displayName: userData.displayName || "Unknown User",
+              photoURL: userData.photoURL || null
+            };
+          }
+        } catch (error) {
+          console.error(`Error fetching participant info for user ${otherParticipantId}:`, error);
+        }
+        
+        return {
+          id: chatDoc.id,
+          ...chatData,
+          updatedAt: chatData.updatedAt?.toDate() || new Date(),
+          createdAt: chatData.createdAt?.toDate() || new Date(),
+          lastMessage: chatData.lastMessage ? {
+            ...chatData.lastMessage,
+            timestamp: chatData.lastMessage.timestamp?.toDate() || new Date()
+          } : null,
+          otherParticipant,
+          unreadCount: chatData.unreadCount?.[userId] || 0
+        };
       } catch (error) {
-        console.error("Error fetching participant info:", error);
+        console.error(`Error processing chat ${chatDoc.id}:`, error);
+        return null; // Skip this chat if there's an error
       }
-      
-      return {
-        id: chatDoc.id,
-        ...chatData,
-        updatedAt: chatData.updatedAt?.toDate(),
-        createdAt: chatData.createdAt?.toDate(),
-        lastMessage: chatData.lastMessage ? {
-          ...chatData.lastMessage,
-          timestamp: chatData.lastMessage.timestamp?.toDate()
-        } : null,
-        otherParticipant,
-        unreadCount: chatData.unreadCount?.[userId] || 0
-      };
     }));
     
-    return chats;
+    // Filter out any null entries (chats that had errors)
+    const validChats = chats.filter(chat => chat !== null);
+    console.log(`Returning ${validChats.length} valid chats`);
+    
+    return validChats;
   } catch (error) {
-    console.error("Error getting user chats:", error);
+    console.error("Error in getUserChats:", error);
     throw error;
   }
 }; 

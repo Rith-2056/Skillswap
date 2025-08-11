@@ -4,7 +4,11 @@ import { doc, getDoc, updateDoc, collection, query, where, getDocs, orderBy, add
 import { db, auth } from "../lib/firebase";
 import EditProfileModal from "../components/EditProfileModal";
 import TestimonialsManager from "../components/TestimonialsManager";
-import { Globe, Github, Linkedin, Twitter, Award, ExternalLink, MessageSquare, ThumbsUp, Trash2, Settings } from "lucide-react";
+import ProfileBadgesSection from "../components/ProfileBadgesSection";
+import { Globe, Github, Linkedin, Twitter, Award, ExternalLink, MessageSquare, ThumbsUp, Trash2, Settings, CheckCircle2, UserPlus, Share } from "lucide-react";
+import { addSkillEndorsement } from "../lib/userFunctions";
+import { checkAndAwardBadges } from "../utils/achievementSystem";
+import SocialShareButton from "../components/shared/SocialShareButton";
 
 function ProfilePage() {
   const { user, karma } = useOutletContext();
@@ -39,6 +43,17 @@ function ProfilePage() {
     notificationsEnabled: true,
     profileVisible: true
   });
+  
+  // State for endorsements
+  const [endorsingSkill, setEndorsingSkill] = useState(null);
+  const [endorsementSuccess, setEndorsementSuccess] = useState(null);
+  const [userStats, setUserStats] = useState({
+    uniqueHelpedUsers: 0,
+    requestsCreated: 0,
+    helpOffered: 0,
+    testimonialCount: 0,
+    highestLeaderboardRank: 99
+  });
 
   useEffect(() => {
     if (!user) return;
@@ -62,6 +77,17 @@ function ProfilePage() {
             }));
           }
           
+          // Build user stats for badge progress tracking
+          const stats = {
+            uniqueHelpedUsers: userData.uniqueHelpedUsers || 0,
+            requestsCreated: userData.requestsCreated || 0,
+            helpOffered: userData.helpOffered || 0,
+            testimonialCount: userData.testimonialCount || 0,
+            highestLeaderboardRank: userData.highestLeaderboardRank || 99,
+            joinDate: userData.createdAt?.toDate() || new Date()
+          };
+          setUserStats(stats);
+          
           setProfileData({
             bio: userData.bio || profileData.bio,
             skills: updatedSkills,
@@ -70,6 +96,24 @@ function ProfilePage() {
             notificationsEnabled: userData.notificationsEnabled !== undefined ? userData.notificationsEnabled : true,
             profileVisible: userData.profileVisible !== undefined ? userData.profileVisible : true
           });
+          
+          // Check for new badges based on user stats
+          if (viewingOwnProfile) {
+            const combinedUserData = {
+              ...userData,
+              ...stats,
+              skills: updatedSkills
+            };
+            const newBadges = await checkAndAwardBadges(user.uid, combinedUserData);
+            
+            // If new badges were earned, update the UI
+            if (newBadges.length > 0) {
+              setProfileData(prev => ({
+                ...prev,
+                badges: [...(prev.badges || []), ...newBadges]
+              }));
+            }
+          }
         }
 
         // Fetch user's requests
@@ -170,6 +214,41 @@ function ProfilePage() {
       alert("Failed to delete testimonial. Please try again.");
     }
   };
+  
+  const handleEndorseSkill = async (skillName) => {
+    if (!auth.currentUser || viewingOwnProfile) return;
+    
+    setEndorsingSkill(skillName);
+    try {
+      await addSkillEndorsement(user.uid, auth.currentUser.uid, skillName);
+      
+      // Update UI immediately for better UX
+      setProfileData(prev => {
+        const updatedSkills = prev.skills.map(skill => {
+          if (skill.name === skillName && !skill.endorsements.includes(auth.currentUser.uid)) {
+            return {
+              ...skill,
+              endorsements: [...skill.endorsements, auth.currentUser.uid]
+            };
+          }
+          return skill;
+        });
+        
+        return {
+          ...prev,
+          skills: updatedSkills
+        };
+      });
+      
+      setEndorsementSuccess(skillName);
+      setTimeout(() => setEndorsementSuccess(null), 2000);
+    } catch (error) {
+      console.error("Error endorsing skill:", error);
+      alert("Failed to endorse skill. Please try again.");
+    } finally {
+      setEndorsingSkill(null);
+    }
+  };
 
   const getKarmaLevel = (karmaPoints) => {
     if (karmaPoints >= 100) return "Expert";
@@ -184,19 +263,53 @@ function ProfilePage() {
     const skillName = typeof skill === 'string' ? skill : skill.name;
     const bgColorClass = getBgColorForSkill(skillName);
     const textColorClass = getTextColorForSkill(skillName);
+    const isEndorsed = typeof skill !== 'string' && 
+                      skill.endorsements && 
+                      auth.currentUser && 
+                      skill.endorsements.includes(auth.currentUser.uid);
+    const isEndorsing = endorsingSkill === skillName;
+    const showEndorseSuccess = endorsementSuccess === skillName;
     
     return (
-      <div key={skillName} className={`px-3 py-1 ${bgColorClass} ${textColorClass} rounded-full text-sm font-medium`}>
-        {skillName}
-        {typeof skill !== 'string' && skill.category && skill.proficiency && (
-          <span className="ml-1 text-xs text-gray-600">
-            • {skill.proficiency}
-          </span>
-        )}
-        {typeof skill !== 'string' && skill.endorsements && skill.endorsements.length > 0 && (
-          <span className="ml-1 text-xs text-yellow-600">
-            ⭐ {skill.endorsements.length}
-          </span>
+      <div key={skillName} className="relative group">
+        <div className={`px-3 py-1.5 ${bgColorClass} ${textColorClass} rounded-full text-sm font-medium inline-flex items-center gap-1.5`}>
+          {skillName}
+          {typeof skill !== 'string' && skill.category && skill.proficiency && (
+            <span className="text-xs text-gray-600">
+              • {skill.proficiency}
+            </span>
+          )}
+          {typeof skill !== 'string' && skill.endorsements && skill.endorsements.length > 0 && (
+            <span className="ml-1 text-xs text-yellow-600 flex items-center">
+              <ThumbsUp size={12} className="mr-0.5" />
+              {skill.endorsements.length}
+            </span>
+          )}
+        </div>
+        
+        {/* Endorse button for other users' profiles */}
+        {!viewingOwnProfile && auth.currentUser && typeof skill !== 'string' && (
+          <button
+            onClick={() => handleEndorseSkill(skillName)}
+            disabled={isEndorsed || isEndorsing}
+            className={`absolute -right-2 -top-2 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity 
+              p-1 rounded-full shadow-sm border 
+              ${isEndorsed 
+                ? 'bg-green-100 text-green-700 border-green-300 cursor-default' 
+                : showEndorseSuccess
+                  ? 'bg-green-100 text-green-700 border-green-300 cursor-default'
+                  : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+              }`}
+            aria-label={isEndorsed ? "Already endorsed" : "Endorse this skill"}
+          >
+            {isEndorsing ? (
+              <div className="w-4 h-4 rounded-full border-2 border-t-transparent border-blue-600 animate-spin"></div>
+            ) : isEndorsed || showEndorseSuccess ? (
+              <CheckCircle2 size={16} className="text-green-600" />
+            ) : (
+              <ThumbsUp size={16} />
+            )}
+          </button>
         )}
       </div>
     );
@@ -234,10 +347,6 @@ function ProfilePage() {
     }
   };
 
-  // Debug Output
-  console.log("User:", user);
-  console.log("Loading state:", loading);
-
   return (
     <div className="max-w-4xl mx-auto">
       {/* Profile Header */}
@@ -250,381 +359,267 @@ function ProfilePage() {
                 Manage your account and skills
               </p>
             </div>
-            <div className="flex gap-2">
-              {viewingOwnProfile && (
-                <button 
-                  onClick={() => setTestimonialManagerOpen(true)}
-                  className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition font-medium shadow-sm flex items-center gap-1"
-                >
-                  <MessageSquare size={16} />
-                  <span>Testimonials</span>
-                </button>
-              )}
-              <button 
-                onClick={() => {
-                  console.log("Edit button clicked!");
-                  setEditModalOpen(true);
-                }}
-                className="px-4 py-2 bg-white text-indigo-600 rounded-lg hover:bg-indigo-50 transition font-medium shadow-sm"
+            
+            {viewingOwnProfile && (
+              <button
+                onClick={() => setEditModalOpen(true)}
+                className="px-4 py-2 bg-white text-blue-600 rounded-lg hover:bg-blue-50 transition shadow-sm flex items-center"
               >
-                ✏️ Edit Profile
+                <Settings size={16} className="mr-2" /> Edit Profile
               </button>
-            </div>
+            )}
+            
+            {!viewingOwnProfile && (
+              <div className="flex gap-2">
+                <button className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition shadow-sm flex items-center">
+                  <UserPlus size={16} className="mr-2" /> Connect
+                </button>
+                <SocialShareButton 
+                  title={`Check out ${user.displayName || 'this user'}'s profile on SkillSwap!`}
+                  text={`${user.displayName || 'This user'} has a skill level of ${getKarmaLevel(karma)} with ${karma} karma points.`}
+                  size="small"
+                  variant="outline"
+                  className="bg-white/10 hover:bg-white/20"
+                />
+              </div>
+            )}
           </div>
         </div>
         
         <div className="p-6">
-          {loading ? (
-            <div className="animate-pulse space-y-4">
-              <div className="flex flex-col items-center mb-8">
-                <div className="w-32 h-32 bg-gray-200 rounded-full"></div>
-                <div className="mt-4 h-6 bg-gray-200 rounded w-40"></div>
-                <div className="mt-2 h-4 bg-gray-200 rounded w-32"></div>
-              </div>
-              <div className="space-y-4">
-                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                <div className="h-24 bg-gray-200 rounded"></div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col">
-              {/* Centered Profile Avatar */}
-              <div className="flex flex-col items-center mb-8">
-                {user.photoURL ? (
-                  <img 
-                    src={user.photoURL}
-                    alt={user.displayName}
-                    className="w-36 h-36 rounded-full border-4 border-indigo-100 shadow-md object-cover"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.style.display = "none";
-                      e.target.parentNode.innerHTML = `
-                        <div class="w-36 h-36 rounded-full border-4 border-indigo-100 shadow-md bg-gradient-to-br from-violet-400 to-indigo-400 flex items-center justify-center text-white text-5xl font-bold">
-                          ${user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
-                        </div>
-                      `;
-                    }}
-                  />
+          <div className="flex flex-col md:flex-row">
+            <div className="mb-6 md:mb-0 md:mr-8">
+              <div className="w-32 h-32 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full mx-auto md:mx-0 flex items-center justify-center">
+                {user?.photoURL ? (
+                  <img src={user.photoURL} alt="Profile" className="w-32 h-32 rounded-full object-cover" />
                 ) : (
-                  <div className="w-36 h-36 rounded-full border-4 border-indigo-100 shadow-md bg-gradient-to-br from-violet-400 to-indigo-400 flex items-center justify-center text-white text-5xl font-bold">
-                    {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
-                  </div>
-                )}
-                
-                <h2 className="mt-4 text-xl font-bold">{user.displayName}</h2>
-                <p className="text-gray-500 text-sm mb-2">{user.email}</p>
-                
-                <div className="flex items-center gap-4 mt-2">
-                  <div className="px-4 py-2 bg-green-100 rounded-full text-green-700 font-medium">
-                    {karma} Karma Points
-                  </div>
-                  
-                  <div className="text-sm text-gray-500">
-                    Level: <span className="font-medium text-indigo-600">{getKarmaLevel(karma)}</span>
-                  </div>
-                </div>
-
-                {/* Profile Links */}
-                {profileData.links && profileData.links.length > 0 && (
-                  <div className="flex flex-wrap gap-3 mt-4 justify-center">
-                    {profileData.links.map((link, index) => (
-                      <a
-                        key={index}
-                        href={link.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-full text-sm text-gray-700 transition"
-                      >
-                        {getLinkIcon(link.type)}
-                        {link.title}
-                      </a>
-                    ))}
-                  </div>
+                  <span className="text-4xl text-indigo-500 font-semibold">
+                    {user?.displayName?.charAt(0) || "U"}
+                  </span>
                 )}
               </div>
               
-              {/* Profile Content */}
-              <div className="space-y-8">
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">About Me</h3>
-                  <div className="bg-gray-50 rounded-lg p-4 text-gray-700">
-                    <p>{profileData.bio}</p>
+              <div className="mt-4 text-center md:text-left">
+                <h2 className="text-xl font-bold text-neutral-800">{user?.displayName || "Anonymous User"}</h2>
+                <p className="text-neutral-500">{user?.email || ""}</p>
+                
+                <div className="mt-2 flex flex-col items-center md:items-start">
+                  <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-3 py-1 rounded-full text-sm font-medium inline-flex items-center">
+                    <Award size={14} className="mr-1" />
+                    {getKarmaLevel(karma)}
+                  </div>
+                  <div className="mt-1 text-sm text-neutral-600">
+                    {karma} karma points
                   </div>
                 </div>
-                
-                {/* Badges & Achievements */}
-                {profileData.badges && profileData.badges.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3">Badges & Achievements</h3>
-                    <div className="flex flex-wrap gap-4">
-                      {profileData.badges.map((badge, index) => (
-                        <div key={index} className="flex flex-col items-center">
-                          <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center text-2xl shadow-sm border border-amber-200">
-                            {badge.icon}
-                          </div>
-                          <span className="mt-2 text-sm font-medium text-gray-900">{badge.name}</span>
-                          <span className="text-xs text-gray-500">{badge.description}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">My Skills</h3>
+              </div>
+            </div>
+            
+            <div className="flex-1 md:border-l md:pl-8 md:border-neutral-200">
+              <h3 className="text-lg font-semibold text-neutral-800 mb-2">About Me</h3>
+              <p className="text-neutral-600 mb-4">
+                {profileData.bio}
+              </p>
+              
+              <h3 className="text-lg font-semibold text-neutral-800 mb-2">Skills</h3>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {profileData.skills.map(skill => renderSkill(skill))}
+              </div>
+              
+              {profileData.links && profileData.links.length > 0 && (
+                <>
+                  <h3 className="text-lg font-semibold text-neutral-800 mb-2">Links</h3>
                   <div className="flex flex-wrap gap-2">
-                    {profileData.skills.map(skill => renderSkill(skill))}
+                    {profileData.links.map((link, idx) => (
+                      <a
+                        key={idx}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center px-3 py-1 bg-neutral-100 hover:bg-neutral-200 rounded-full text-sm text-neutral-800 transition"
+                      >
+                        {getLinkIcon(link.type)}
+                        <span className="ml-1.5">{link.title || link.type}</span>
+                      </a>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Badges Section */}
+      <div className="mb-6">
+        <ProfileBadgesSection 
+          userBadges={profileData.badges || []} 
+          isOwnProfile={viewingOwnProfile}
+          userData={{
+            ...userStats,
+            skills: profileData.skills
+          }}
+        />
+      </div>
+      
+      {/* Tabs */}
+      <div className="bg-white rounded-xl shadow-md overflow-hidden mb-6">
+        <div className="border-b border-neutral-200">
+          <nav className="flex">
+            <button className="px-6 py-4 text-neutral-900 font-medium border-b-2 border-blue-500">
+              Contributions
+            </button>
+            <button className="px-6 py-4 text-neutral-500 hover:text-neutral-900">
+              My Requests
+            </button>
+            <button className="px-6 py-4 text-neutral-500 hover:text-neutral-900">
+              Testimonials
+            </button>
+          </nav>
+        </div>
+        
+        <div className="p-6">
+          {myContributions.length > 0 ? (
+            <div className="space-y-4">
+              {myContributions.map(contribution => (
+                <div key={contribution.id} className="border border-neutral-200 rounded-lg p-4 hover:bg-neutral-50 transition">
+                  <div className="flex justify-between">
+                    <div>
+                      <h3 className="font-medium text-neutral-900">{contribution.title}</h3>
+                      <p className="text-sm text-neutral-600 mt-1">{contribution.description.substring(0, 100)}...</p>
+                    </div>
+                    <SocialShareButton
+                      title="I helped someone on SkillSwap!"
+                      text={`I just helped with "${contribution.title}" on SkillSwap.`}
+                      size="small"
+                      variant="outline"
+                    />
+                  </div>
+                  <div className="mt-3 flex items-center text-sm text-neutral-500">
+                    <span>Helped on {contribution.createdAt?.toDate?.() ? new Date(contribution.createdAt.toDate()).toLocaleDateString() : "N/A"}</span>
+                    <span className="mx-2">•</span>
+                    <span className="text-green-600 font-medium">+{contribution.karmaAwarded || 5} karma</span>
                   </div>
                 </div>
-                
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">Account Settings</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center border-b pb-3">
-                      <div>
-                        <p className="font-medium">Email Notifications</p>
-                        <p className="text-sm text-gray-500">Receive email notifications when someone responds to your requests</p>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-neutral-500">
+              No contributions yet. Start helping others to build your karma!
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Testimonials Section */}
+      <div className="bg-white rounded-xl shadow-md overflow-hidden mb-6">
+        <div className="p-6 bg-gradient-to-r from-purple-600 to-pink-600 text-white">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-bold flex items-center">
+              <MessageSquare className="mr-2" /> Testimonials
+            </h2>
+            
+            {viewingOwnProfile && testimonials.length > 0 && (
+              <button
+                onClick={() => setTestimonialManagerOpen(true)}
+                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg transition text-sm flex items-center"
+              >
+                <Settings size={14} className="mr-1.5" /> Manage
+              </button>
+            )}
+          </div>
+          <p className="text-purple-100 mt-1">
+            What others say about working with you
+          </p>
+        </div>
+        
+        <div className="p-6">
+          {testimonials.length > 0 ? (
+            <div className="space-y-6">
+              {testimonials.map(testimonial => (
+                <div key={testimonial.id} className="border-b border-neutral-200 pb-6 last:border-b-0 last:pb-0">
+                  <div className="flex">
+                    {testimonial.senderPhoto ? (
+                      <img src={testimonial.senderPhoto} alt="Reviewer" className="w-12 h-12 rounded-full mr-4" />
+                    ) : (
+                      <div className="w-12 h-12 bg-purple-100 rounded-full mr-4 flex items-center justify-center">
+                        <span className="text-purple-700 font-medium">
+                          {testimonial.senderName?.charAt(0) || "A"}
+                        </span>
                       </div>
-                      <div className={`h-6 w-11 rounded-full relative ${profileData.notificationsEnabled ? 'bg-indigo-600' : 'bg-gray-200'}`}>
-                        <div className={`absolute h-5 w-5 rounded-full bg-white top-0.5 transition-all ${profileData.notificationsEnabled ? 'right-0.5' : 'left-0.5'}`}></div>
-                      </div>
-                    </div>
+                    )}
                     
-                    <div className="flex justify-between items-center border-b pb-3">
-                      <div>
-                        <p className="font-medium">Profile Visibility</p>
-                        <p className="text-sm text-gray-500">Make your profile visible to other users</p>
+                    <div className="flex-1">
+                      <div className="flex justify-between items-center mb-2">
+                        <h3 className="font-medium text-neutral-900">{testimonial.senderName}</h3>
+                        
+                        {viewingOwnProfile && (
+                          <button
+                            onClick={() => handleDeleteTestimonial(testimonial.id)}
+                            className="text-neutral-400 hover:text-red-600"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </div>
-                      <div className={`h-6 w-11 rounded-full relative ${profileData.profileVisible ? 'bg-indigo-600' : 'bg-gray-200'}`}>
-                        <div className={`absolute h-5 w-5 rounded-full bg-white top-0.5 transition-all ${profileData.profileVisible ? 'right-0.5' : 'left-0.5'}`}></div>
+                      
+                      <p className="text-neutral-600">{testimonial.text}</p>
+                      
+                      <div className="mt-2 text-sm text-neutral-500">
+                        {testimonial.createdAt?.toDate?.() ? new Date(testimonial.createdAt.toDate()).toLocaleDateString() : "N/A"}
                       </div>
                     </div>
                   </div>
                 </div>
-                
-                {/* Testimonials Section */}
-                <div>
-                  <div className="flex justify-between items-center mb-3">
-                    <h3 className="text-lg font-semibold">Testimonials</h3>
-                    <div className="text-sm text-gray-500">
-                      {testimonials.length} {testimonials.length === 1 ? 'testimonial' : 'testimonials'}
-                    </div>
-                  </div>
-
-                  {testimonials.length > 0 ? (
-                    <div className="space-y-4">
-                      {testimonials.map((testimonial) => (
-                        <div 
-                          key={testimonial.id}
-                          className="bg-gray-50 border border-gray-100 rounded-lg p-4 relative"
-                        >
-                          <div className="flex items-start gap-3">
-                            {testimonial.senderPhoto ? (
-                              <img 
-                                src={testimonial.senderPhoto} 
-                                alt={testimonial.senderName}
-                                className="w-10 h-10 rounded-full"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-400 to-gray-600 flex items-center justify-center text-white font-bold">
-                                {testimonial.senderName?.charAt(0) || "?"}
-                              </div>
-                            )}
-                            <div>
-                              <div className="font-medium">{testimonial.senderName}</div>
-                              <p className="text-gray-700 mt-1">{testimonial.text}</p>
-                              <p className="text-xs text-gray-500 mt-2">
-                                {testimonial.createdAt?.toDate().toLocaleDateString() || "Recent"}
-                              </p>
-                            </div>
-                          </div>
-                          
-                          {viewingOwnProfile && (
-                            <button
-                              onClick={() => handleDeleteTestimonial(testimonial.id)}
-                              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
-                              aria-label="Delete testimonial"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="bg-gray-50 rounded-lg p-8 text-center">
-                      <MessageSquare size={24} className="mx-auto text-gray-400 mb-2" />
-                      <p className="text-gray-500">No testimonials yet</p>
-                    </div>
-                  )}
-                  
-                  {/* Testimonial Form (only show if not viewing own profile) */}
-                  {!viewingOwnProfile && (
-                    <div className="mt-6 border-t border-gray-200 pt-6">
-                      <h4 className="font-medium text-gray-900 mb-2">Leave a Testimonial</h4>
-                      <div className="flex gap-2">
-                        <textarea 
-                          value={newTestimonial}
-                          onChange={(e) => setNewTestimonial(e.target.value)}
-                          placeholder="Share your experience working with this person..."
-                          className="flex-1 min-h-[80px] p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-                        />
-                        <button 
-                          onClick={handleSubmitTestimonial}
-                          disabled={submittingTestimonial || !newTestimonial.trim()}
-                          className={`px-4 py-2 rounded-lg self-start ${
-                            submittingTestimonial || !newTestimonial.trim() 
-                              ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                              : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                          }`}
-                        >
-                          {submittingTestimonial ? 'Submitting...' : 'Submit'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Testimonials are reviewed before they appear on profiles.
-                      </p>
-                    </div>
-                  )}
-                </div>
-                
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-neutral-500">
+              No testimonials yet.
+            </div>
+          )}
+          
+          {!viewingOwnProfile && auth.currentUser && (
+            <div className="mt-6 pt-6 border-t border-neutral-200">
+              <h3 className="font-medium text-neutral-800 mb-3">Leave a testimonial</h3>
+              <textarea
+                value={newTestimonial}
+                onChange={(e) => setNewTestimonial(e.target.value)}
+                placeholder="Share your experience working with this person..."
+                className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                rows={3}
+              ></textarea>
+              
+              <div className="mt-3 flex justify-end">
+                <button
+                  onClick={handleSubmitTestimonial}
+                  disabled={!newTestimonial.trim() || submittingTestimonial}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submittingTestimonial ? 'Submitting...' : 'Submit Testimonial'}
+                </button>
               </div>
             </div>
           )}
         </div>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-        <div className="bg-white rounded-xl shadow-md overflow-hidden">
-          <div className="p-4 bg-gradient-to-r from-indigo-500 to-purple-500 text-white">
-            <h2 className="text-lg font-bold">My Requests</h2>
-          </div>
-          
-          <div className="p-4">
-            {loading ? (
-              <div className="animate-pulse space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-16 bg-gray-200 rounded mb-3"></div>
-                ))}
-              </div>
-            ) : myRequests.length === 0 ? (
-              <div className="text-center py-6 text-gray-500">
-                <p>You haven't created any requests yet.</p>
-                <a href="/" className="text-indigo-600 hover:text-indigo-800 mt-2 inline-block">Create a request</a>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {myRequests.slice(0, 5).map((request) => (
-                  <div key={request.id} className="border rounded-lg p-3 hover:bg-gray-50">
-                    <div className="flex justify-between">
-                      <h3 className="font-medium">{request.title}</h3>
-                      <span className={`text-xs px-2 py-1 rounded-full ${
-                        request.status === 'open' ? 'bg-green-100 text-green-800' :
-                        request.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                        request.status === 'completed' ? 'bg-gray-100 text-gray-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {request.status === 'open' ? 'Open' :
-                         request.status === 'in_progress' ? 'In Progress' :
-                         request.status === 'completed' ? 'Completed' : 'Pending'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-500 mt-1">
-                      {new Date(request.createdAt.toDate()).toLocaleDateString()}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-xl shadow-md overflow-hidden">
-          <div className="p-4 bg-gradient-to-r from-indigo-500 to-purple-500 text-white">
-            <h2 className="text-lg font-bold">My Contributions</h2>
-          </div>
-          
-          <div className="p-4">
-            {loading ? (
-              <div className="animate-pulse space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-16 bg-gray-200 rounded mb-3"></div>
-                ))}
-              </div>
-            ) : myContributions.length === 0 ? (
-              <div className="text-center py-6 text-gray-500">
-                <p>You haven't contributed to any requests yet.</p>
-                <a href="/" className="text-indigo-600 hover:text-indigo-800 mt-2 inline-block">Find opportunities</a>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {myContributions.slice(0, 5).map((contribution) => (
-                  <div key={contribution.id} className="border rounded-lg p-3 hover:bg-gray-50">
-                    <div className="flex justify-between">
-                      <h3 className="font-medium">{contribution.title}</h3>
-                      <span className={`text-xs px-2 py-1 rounded-full ${
-                        contribution.status === 'open' ? 'bg-green-100 text-green-800' :
-                        contribution.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                        contribution.status === 'completed' ? 'bg-gray-100 text-gray-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {contribution.status === 'open' ? 'Open' :
-                         contribution.status === 'in_progress' ? 'In Progress' :
-                         contribution.status === 'completed' ? 'Completed' : 'Pending'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-500 mt-1">
-                      {new Date(contribution.createdAt.toDate()).toLocaleDateString()}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-      
-      {/* Include Edit Profile Modal */}
+      {/* Edit Profile Modal */}
       {editModalOpen && (
         <EditProfileModal
-          isOpen={editModalOpen}
+          profile={profileData}
+          onSave={handleProfileUpdate}
           onClose={() => setEditModalOpen(false)}
-          user={user}
-          initialData={profileData}
-          onProfileUpdate={handleProfileUpdate}
         />
       )}
-
-      {/* Include Testimonials Manager Modal */}
-      {testimonialManagerOpen && viewingOwnProfile && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-4xl mx-auto max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b sticky top-0 bg-white z-10">
-              <div className="flex justify-between items-center">
-                <h3 className="text-xl font-semibold text-gray-900">Manage Testimonials</h3>
-                <button 
-                  onClick={() => setTestimonialManagerOpen(false)}
-                  className="text-gray-400 hover:text-gray-500"
-                >
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div className="p-6">
-              <TestimonialsManager userId={user.uid} />
-            </div>
-          </div>
-        </div>
+      
+      {/* Testimonials Manager Modal */}
+      {testimonialManagerOpen && (
+        <TestimonialsManager
+          userId={user.uid}
+          onClose={() => setTestimonialManagerOpen(false)}
+        />
       )}
-
-      {/* Debug Panel */}
-      <div className="mt-8 p-4 bg-slate-100 rounded-lg border border-slate-200 text-xs text-slate-500" style={{display: 'none'}}>
-        <div>Edit Modal Open: {editModalOpen ? 'true' : 'false'}</div>
-        <div>Loading: {loading ? 'true' : 'false'}</div>
-        <div>User: {user ? user.displayName : 'null'}</div>
-      </div>
     </div>
   );
 }

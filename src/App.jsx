@@ -4,7 +4,10 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "./lib/firebase";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { createOrUpdateUser } from "./lib/userFunctions";
-import { AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import { setupFocusRingForKeyboardUsers, addSkipToContentLink, useReducedMotion } from "./utils/accessibilityUtils";
+import { ANIMATION } from "./utils/DesignSystem";
+import { Loader2 } from "lucide-react";
 
 // Layouts
 import MainLayout from "./layouts/MainLayout";
@@ -21,18 +24,33 @@ import ChatsPage from "./pages/ChatsPage";
 // AnimatePresence wrapper for route transitions
 const AnimatedRoutes = ({ user, karma, loading }) => {
   const location = useLocation();
+  const prefersReducedMotion = useReducedMotion();
+  
+  // Setup skip link for keyboard users
+  useEffect(() => {
+    addSkipToContentLink('main-content');
+  }, []);
   
   // Loading screen while checking authentication
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-secondary-50">
-        <div className="flex flex-col items-center">
-          <div className="w-16 h-16 border-t-4 border-b-4 border-primary-600 rounded-full animate-spin mb-4"></div>
-          <p className="text-xl font-medium text-primary-700">Loading...</p>
+        <div className="flex flex-col items-center text-center p-4" role="status" aria-live="polite">
+          <Loader2 className="w-16 h-16 text-primary-600 animate-spin mb-4" />
+          <p className="text-xl font-medium text-primary-700">Loading your account...</p>
+          <p className="text-sm text-neutral-500 mt-2">Please wait while we set everything up</p>
         </div>
       </div>
     );
   }
+  
+  // Don't use animations if the user prefers reduced motion
+  const getPageTransitions = () => {
+    if (prefersReducedMotion) {
+      return {}; // No animations
+    }
+    return ANIMATION.VARIANTS.PAGE_TRANSITION;
+  };
   
   return (
     <AnimatePresence mode="wait">
@@ -45,7 +63,11 @@ const AnimatedRoutes = ({ user, karma, loading }) => {
         {/* Protected routes with MainLayout */}
         <Route element={
           <ProtectedRoute user={user}>
-            <MainLayout user={user} karma={karma} />
+            <MainLayout 
+              user={user} 
+              karma={karma} 
+              pageTransitions={getPageTransitions()} 
+            />
           </ProtectedRoute>
         }>
           <Route path="/" element={<HomePage />} />
@@ -74,6 +96,17 @@ function App() {
   const [user, setUser] = useState(null);
   const [karma, setKarma] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  // Setup accessibility features on component mount
+  useEffect(() => {
+    // Setup keyboard navigation focus outlines
+    setupFocusRingForKeyboardUsers();
+    
+    // Add application-level role for better screen reader context
+    document.getElementById('root')?.setAttribute('role', 'application');
+    document.getElementById('root')?.setAttribute('aria-label', 'SkillSwap Application');
+    
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
