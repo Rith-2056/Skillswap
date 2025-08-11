@@ -223,22 +223,6 @@ Env: GOOGLE_AI_API_KEY = <your key>
 - Platform shares: Twitter/X, LinkedIn, Facebook, Email, Telegram, WhatsApp
 - Reusable `SocialShareButton` and helpers in `src/utils/socialSharingUtils.js`
 
----
-
-## ♿ Accessibility
-
-- Skip-to-content link
-- Keyboard-only focus ring behavior
-- Reduced motion support with `prefers-reduced-motion`
-- Semantic elements and ARIA usage throughout
-
----
-
-## 📚 Related Docs
-
-- `COMMUNITY_FEATURES.md`: Leaderboard, badges, profile improvements, social sharing details
-- `UI_IMPROVEMENTS.md`: Design system, responsiveness, animations, accessibility
-- `SkillSwap_Roadmap.md`: Detailed multi-milestone product roadmap
 
 ---
 
